@@ -62,26 +62,31 @@ while True:
     if not already_bought:
         try:
             buy_tx = router.functions.swapExactTokensForTokens(
-                web3.to_wei(amount_in, "ether"),
-                web3.to_wei(amount_out, "ether"),
+                amount_in,
+                amount_out,
                 [addressUsdt, addressPGT],
                 user_address,
-                int(time.time()) + 200,
+                int(time.time() + 200),
             ).build_transaction(
                 {
                     "from": user_address,
                     "nonce": web3.eth.get_transaction_count(user_address),
+                    "gasPrice": web3.eth.gas_price,
                 }
             )
-        except (ContractCustomError, ContractLogicError):
+
+        except (ContractCustomError, ContractLogicError) as e:
+            print(e)
             (pgt, usdt, bnb) = get_balances(user_address)
             sys.exit(
                 f"Tx failed: Do you have balance in Token({pgt}), Usdt({usdt}), Bnb({bnb}) ? Are tokens approved?"
             )
-        except:
+        except Exception as e:
+            print(e)
             sys.exit("Error: Buy Tx Failed!")
 
         try:
+            print("buying....")
             signed_tx = web3.eth.account.sign_transaction(
                 buy_tx, private_key=private_key
             )
@@ -91,18 +96,20 @@ while True:
             ).call()
             tx_hash = web3.eth.send_raw_transaction(signed_tx.rawTransaction)
             amount_out = out
-        except:
+        except Exception as e:
+            print(e)
             (_, _, bnb) = get_balances(user_address)
             sys.exit(
                 f"Error: transaction failed, invalid privateKey or insufficient gas.Bnb({bnb})"
             )
 
-        from_block = web3.eth.wait_for_transaction_receipt(tx_hash)
+        receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
+        from_block = receipt["blockNumber"]
         with open(os.path.abspath("sensitive.json"), "w") as sensitiveBought:
             position = {
                 "bought": True,
                 "amountOut": amount_out,
-                "fromBlock": json.dumps(from_block, default=str),
+                "fromBlock": from_block,
             }
             json.dump(position, sensitiveBought, indent=4)
 
@@ -117,7 +124,7 @@ while True:
     logs = web3.eth.get_logs(
         {
             "address": addressPGT,
-            "fromBlock": from_block["blockNumber"] + 1,
+            "fromBlock": from_block + 1,
             "topics": [transfer_topic],
         }
     )
@@ -152,14 +159,16 @@ while True:
                                 addressUsdt,
                             ],
                             user_address,
-                            int(time.time()) + 300,
+                            int(time.time() + 300),
                         ).build_transaction(
                             {
                                 "from": user_address,
                                 "nonce": web3.eth.get_transaction_count(user_address),
+                                "gasPrice": web3.eth.gas_price,
                             }
                         )
-                    except (ContractCustomError, ContractLogicError):
+                    except (ContractCustomError, ContractLogicError) as e:
+                        print(e)
                         (pgt, usdt, bnb) = get_balances(user_address)
                         sys.exit(
                             f"Sell Tx failed: Do you have balance Token({pgt}), Usdt({usdt}), Bnb({bnb})? Are tokens approved?"
