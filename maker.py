@@ -117,7 +117,7 @@ while True:
     logs = web3.eth.get_logs(
         {
             "address": addressPGT,
-            "fromBlock": from_block["blockNumber"],
+            "fromBlock": from_block["blockNumber"] + 1,
             "topics": [transfer_topic],
         }
     )
