@@ -5,6 +5,6 @@
   "addressUsdt": "0x55d398326f99059ff775485246999027b3197955",
   "addressPair": "0xaCFe55620451089c49C1F2635CE10F141cBeb7eB",
   "privateKey": "",
-  "nodeProvider": "https://nodeprovider.com/",
-  "depositAmount": 50
+  "nodeProvider": "",
+  "depositAmount": "50"
 }
