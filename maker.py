@@ -63,12 +63,17 @@ def get_balances(address):
 
 
 while True:
-    if interval < 60:
+    if interval <= 60:
         if not already_bought:
             try:
+                (_, out) = router.functions.getAmountsOut(
+                    amount_in,
+                    [addressUsdt, addressPGT],
+                ).call()
+                amount_out = out
                 buy_tx = router.functions.swapExactTokensForTokens(
                     amount_in,
-                    amount_out,
+                    int(amount_out * (1 - 0.5 / 100)),
                     [addressUsdt, addressPGT],
                     user_address,
                     int(time.time() + 200),
@@ -95,12 +100,10 @@ while True:
                 signed_tx = web3.eth.account.sign_transaction(
                     buy_tx, private_key=private_key
                 )
-                (_, out) = router.functions.getAmountsOut(
-                    amount_in,
-                    [addressUsdt, addressPGT],
-                ).call()
+
                 tx_hash = web3.eth.send_raw_transaction(signed_tx.rawTransaction)
-                amount_out = out
+
+                receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
             except Exception as e:
                 print(e)
                 (_, _, bnb) = get_balances(user_address)
@@ -108,19 +111,21 @@ while True:
                     f"Error: transaction failed, invalid privateKey or insufficient gas.Bnb({bnb})"
                 )
 
-            receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
-            from_block = receipt["blockNumber"]
-            with open(os.path.abspath("sensitive.json"), "w") as sensitiveBought:
-                position = {
-                    "bought": True,
-                    "amountOut": amount_out,
-                    "fromBlock": from_block,
-                }
-                json.dump(position, sensitiveBought, indent=4)
+            if receipt["status"] == 1:
+                from_block = receipt["blockNumber"]
+                with open(os.path.abspath("sensitive.json"), "w") as sensitiveBought:
+                    position = {
+                        "bought": True,
+                        "amountOut": amount_out,
+                        "fromBlock": from_block,
+                    }
+                    json.dump(position, sensitiveBought, indent=4)
 
-            already_bought = True
+                already_bought = True
 
-            print(f"Tokens bought with tx hash {web3.to_hex(tx_hash)}")
+                print(f"Tokens bought with confirmed tx hash {web3.to_hex(tx_hash)}")
+            else:
+                sys.exit("Error: buy transaction sent but was not mined")
 
         # latest_block = web3.eth.get_block("latest")  # change to block num of buy order
 
@@ -129,7 +134,7 @@ while True:
         logs = web3.eth.get_logs(
             {
                 "address": addressPGT,
-                "fromBlock": from_block + 1,
+                "fromBlock": from_block,
                 "topics": [transfer_topic],
             }
         )
@@ -140,6 +145,7 @@ while True:
                 decoded_log
                 and web3.to_checksum_address(decoded_log["args"]["from"])
                 == pair_address
+                and web3.to_checksum_address(decoded_log["args"]["to"]) != user_address
             ):
                 if decoded_log["args"]["value"] >= web3.to_wei("10", "ether"):
                     print(web3.from_wei(decoded_log["args"]["value"], "ether"))
@@ -147,17 +153,17 @@ while True:
                         amount_in,
                         [addressUsdt, addressPGT],
                     ).call()
-                    if (amount_out * (1 - (0.6) / 100)) > out:
+                    if (amount_out * (1 - (0.9) / 100)) > out:
                         print("UwU! Found valid buy!!! selling....")
                         pgt_balance = pgt.functions.balanceOf(user_address).call()
-                        (_, amount_out) = router.functions.getAmountsOut(
-                            pgt_balance,
-                            [
-                                addressPGT,
-                                addressUsdt,
-                            ],
-                        ).call()
                         try:
+                            (_, amount_out) = router.functions.getAmountsOut(
+                                pgt_balance,
+                                [
+                                    addressPGT,
+                                    addressUsdt,
+                                ],
+                            ).call()
                             sell_tx = router.functions.swapExactTokensForTokens(
                                 pgt_balance,
                                 int(amount_out * (1 - 0.5 / 100)),
@@ -179,9 +185,7 @@ while True:
                         except (ContractCustomError, ContractLogicError) as e:
                             print(e)
                             (pgt, usdt, bnb) = get_balances(user_address)
-                            sys.exit(
-                                f"Sell Tx failed: Do you have balance Token({pgt}), Usdt({usdt}), Bnb({bnb})? Are tokens approved?"
-                            )
+                            sys.exit(f"Error: Token({pgt}), Usdt({usdt}), Bnb({bnb})? ")
 
                         try:
                             signed_tx = web3.eth.account.sign_transaction(
@@ -190,31 +194,40 @@ while True:
                             tx_hash = web3.eth.send_raw_transaction(
                                 signed_tx.rawTransaction
                             )
-                        except:
+                            receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
+                        except Exception as e:
+                            print(e)
                             (_, _, bnb) = get_balances(user_address)
                             sys.exit(
                                 f"Error: transaction failed, invalid privateKey or insufficient gas.Bnb({bnb})"
                             )
-                        with open(
-                            os.path.abspath("sensitive.json"), "w"
-                        ) as sensitiveBought:
-                            position = {
-                                "bought": False,
-                                "amountOut": 0,
-                                "fromBlock": {},
-                            }
-                            json.dump(position, sensitiveBought, indent=4)
-                        already_bought = False
-                        print(f"Sold with tx hash ({web3.to_hex(tx_hash)})!!!  UwU!")
-                        break
+                        if receipt["status"] == 1:
+                            with open(
+                                os.path.abspath("sensitive.json"), "w"
+                            ) as sensitiveBought:
+                                position = {
+                                    "bought": False,
+                                    "amountOut": 0,
+                                    "fromBlock": {},
+                                }
+                                json.dump(position, sensitiveBought, indent=4)
+                            already_bought = False
+                            print(
+                                f"Sold with confirmed tx hash ({web3.to_hex(tx_hash)})!!!  UwU!"
+                            )
+                            break
+                        else:
+                            sys.exit(
+                                "Error: sell tx was sent successfully but was not mined"
+                            )
                     else:
                         print("OwO! Found buy but not profitable. Holding...")
                 else:
                     print("found buy less than 10 tokens, holding...")
             else:
                 print("No buy found...")
-        print("sleep 10 minuites")
-        interval = interval + 10
+        print("sleep 2 minuites")
+        interval = interval + 2
         from_block = web3.eth.get_block_number()
         with open(os.path.abspath("sensitive.json"), "w") as sensitiveBought:
             position = {
@@ -223,9 +236,9 @@ while True:
                 "fromBlock": from_block,
             }
             json.dump(position, sensitiveBought, indent=4)
-        time.sleep(600)
+        time.sleep(120)
     else:
-        print("No Profitable buy found after 1 hour")
+        print("No Profitable buy found after 1 hour, shutting down...")
         pgt_balance = pgt.functions.balanceOf(user_address).call()
         (_, amount_out) = router.functions.getAmountsOut(
             pgt_balance,
@@ -237,7 +250,7 @@ while True:
         try:
             sell_tx = router.functions.swapExactTokensForTokens(
                 pgt_balance,
-                int(amount_out * (1 - 0.5 / 100)),
+                int(amount_out * (1 - 0.9 / 100)),
                 [
                     addressPGT,
                     addressUsdt,
@@ -254,23 +267,26 @@ while True:
         except (ContractCustomError, ContractLogicError) as e:
             print(e)
             (pgt, usdt, bnb) = get_balances(user_address)
-            sys.exit(
-                f"Sell Tx failed: Do you have balance Token({pgt}), Usdt({usdt}), Bnb({bnb})? Are tokens approved?"
-            )
+            sys.exit(f"Sell Tx failed: Token({pgt}), Usdt({usdt}), Bnb({bnb})?")
 
         try:
             signed_tx = web3.eth.account.sign_transaction(
                 sell_tx, private_key=private_key
             )
             tx_hash = web3.eth.send_raw_transaction(signed_tx.rawTransaction)
-        except:
+            receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
+        except Exception as e:
+            print(e)
             (_, _, bnb) = get_balances(user_address)
             sys.exit(
                 f"Error: transaction failed, invalid privateKey or insufficient gas.Bnb({bnb})"
             )
-        with open(os.path.abspath("sensitive.json"), "w") as sensitiveBought:
-            position = {"bought": False, "amountOut": 0, "fromBlock": {}}
-            json.dump(position, sensitiveBought, indent=4)
-        already_bought = False
-        print(f"Sold with tx hash ({web3.to_hex(tx_hash)})!!!  UwU!")
-        sys.exit("shutting down...")
+        if receipt["status"] == 1:
+            with open(os.path.abspath("sensitive.json"), "w") as sensitiveBought:
+                position = {"bought": False, "amountOut": 0, "fromBlock": {}}
+                json.dump(position, sensitiveBought, indent=4)
+            already_bought = False
+            print(f"Sold with confirmed tx hash ({web3.to_hex(tx_hash)})!!!  UwU!")
+            sys.exit("shutting down...")
+        else:
+            sys.exit("Error: sell tx was sent successfully but was not mined")
