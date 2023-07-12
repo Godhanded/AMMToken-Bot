@@ -66,14 +66,14 @@ while True:
     if interval <= 60:
         if not already_bought:
             try:
-                (_, out) = router.functions.getAmountsOut(
+                (_, _out) = router.functions.getAmountsOut(
                     amount_in,
                     [addressUsdt, addressPGT],
                 ).call()
-                amount_out = out
+                before_balance = pgt.functions.balanceOf(user_address).call()
                 buy_tx = router.functions.swapExactTokensForTokens(
                     amount_in,
-                    int(amount_out * (1 - 0.5 / 100)),
+                    int(_out * (1 - 0.5 / 100)),
                     [addressUsdt, addressPGT],
                     user_address,
                     int(time.time() + 200),
@@ -113,6 +113,8 @@ while True:
 
             if receipt["status"] == 1:
                 from_block = receipt["blockNumber"]
+                after_balance = pgt.functions.balanceOf(user_address).call()
+                amount_out = abs(after_balance - before_balance)
                 with open(os.path.abspath("sensitive.json"), "w") as sensitiveBought:
                     position = {
                         "bought": True,
@@ -153,20 +155,19 @@ while True:
                         amount_in,
                         [addressUsdt, addressPGT],
                     ).call()
-                    if (amount_out * (1 - (0.9) / 100)) > out:
+                    if amount_out > out:
                         print("UwU! Found valid buy!!! selling....")
-                        pgt_balance = pgt.functions.balanceOf(user_address).call()
                         try:
-                            (_, amount_out) = router.functions.getAmountsOut(
-                                pgt_balance,
+                            (_, _out) = router.functions.getAmountsOut(
+                                amount_out,
                                 [
                                     addressPGT,
                                     addressUsdt,
                                 ],
                             ).call()
                             sell_tx = router.functions.swapExactTokensForTokens(
-                                pgt_balance,
-                                int(amount_out * (1 - 0.5 / 100)),
+                                amount_out,
+                                int(_out * (1 - 0.8 / 100)),
                                 [
                                     addressPGT,
                                     addressUsdt,
@@ -229,19 +230,17 @@ while True:
         print("sleep 2 minuites")
         interval = interval + 2
         from_block = web3.eth.get_block_number()
+        with open(os.path.abspath("sensitive.json")) as sensitive:
+            positions = json.load(sensitive)
         with open(os.path.abspath("sensitive.json"), "w") as sensitiveBought:
-            position = {
-                "bought": False,
-                "amountOut": amount_out,
-                "fromBlock": from_block,
-            }
-            json.dump(position, sensitiveBought, indent=4)
+            positions["fromBlock"] = from_block
+            json.dump(positions, sensitiveBought, indent=4)
         time.sleep(120)
     else:
         print("No Profitable buy found after 1 hour, shutting down...")
         pgt_balance = pgt.functions.balanceOf(user_address).call()
-        (_, amount_out) = router.functions.getAmountsOut(
-            pgt_balance,
+        (_, _out) = router.functions.getAmountsOut(
+            amount_out,
             [
                 addressPGT,
                 addressUsdt,
@@ -249,8 +248,8 @@ while True:
         ).call()
         try:
             sell_tx = router.functions.swapExactTokensForTokens(
-                pgt_balance,
-                int(amount_out * (1 - 0.9 / 100)),
+                amount_out,
+                int(_out * (1 - 0.9 / 100)),
                 [
                     addressPGT,
                     addressUsdt,
